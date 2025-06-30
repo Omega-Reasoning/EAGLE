@@ -293,7 +293,7 @@ class EaModel(nn.Module):
             if input_ids.shape[1] > max_length:
                 break
         if not log:
-            return input_ids
+            return input_ids, logits[best_candidate],candidates
         else:
             return input_ids, new_token, idx
 
