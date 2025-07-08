@@ -414,6 +414,87 @@ def evaluate_posterior(
             sample_p = torch.softmax(gt_logits, dim=0)
         return torch.tensor(best_candidate), accept_length - 1, sample_p
 
+def multi_entropy_evaluate_posterior(
+        logits: torch.Tensor,
+        candidates: torch.Tensor,
+        logits_processor,
+        entropy_threshold = 1,
+        ud_probability_factor = 100):
+    """
+    Evaluate the posterior probabilities of the candidates based on the provided logits and choose the best candidate.
+
+    Depending on the temperature value, the function either uses greedy decoding or evaluates posterior
+    probabilities to select the best candidate.
+
+    Args:
+    - logits (torch.Tensor): Predicted logits of shape (batch_size, sequence_length, vocab_size).
+    - candidates (torch.Tensor): Candidate token sequences.
+    - temperature (float): Softmax temperature for probability scaling. A value of 0 indicates greedy decoding.
+    - posterior_threshold (float): Threshold for posterior probability.
+    - posterior_alpha (float): Scaling factor for the threshold.
+
+    Returns:
+    - best_candidate (torch.Tensor): Index of the chosen best candidate.
+    - accept_length (int): Length of the accepted candidate sequence.
+    """
+    # Greedy decoding based on temperature value
+    if logits_processor is None:
+        # Find the tokens that match the maximum logits for each position in the sequence
+        posterior_mask = (
+                candidates[:, 1:].to(logits.device) == torch.argmax(logits[:, :-1], dim=-1)
+        ).int()
+        candidates_accept_length = (torch.cumprod(posterior_mask, dim=1)).sum(dim=1)
+        accept_length = candidates_accept_length.max()
+        # Choose the best candidate
+        if accept_length == 0:
+            # Default to the first candidate if none are accepted
+            best_candidate = torch.tensor(0, dtype=torch.long, device=candidates.device)
+        else:
+            best_candidate = torch.argmax(candidates_accept_length).to(torch.long)
+        return best_candidate, accept_length, logits[best_candidate, accept_length]
+
+    else:
+        accept_lengths = torch.ones(candidates.shape[0],dtype=int)
+        al = 1
+        for i in range(1, candidates.shape[1]):
+            gt_logits = logits[:, i][None] # take first token as correct
+            gt_logits = logits_processor(None, gt_logits)[0]
+            gtp = torch.softmax(gt_logits, dim=1)
+            gte = torch.special.entr(gtp).sum(dim=1)
+
+            for j in range(candidates.shape[0]):  
+                x = candidates[j, i]
+                xi = x.item()
+                if xi == -1 or accept_lengths[j] < al:
+                    continue
+                
+                r = random.random()
+                acp = gtp[j][xi]
+                e = gte[j]
+                if e > entropy_threshold:
+                        #token probability needs to be larger then uniform distribution prob. * factor
+                        r = ud_probability_factor*((1/logits.shape[2])**(i+1))
+                        print(acp)
+
+                if r <= acp:
+                    accept_lengths[j] +=1
+            al+=1
+        
+        print(accept_lengths)
+        accepted_candidates = [candidates[i,:a] for i,a in enumerate(accept_lengths) if a>1]
+
+        
+        
+        print(f"-----------------Summary-----------\n{accept_lengths}")
+        print(accepted_candidates)
+        print(r)
+        if len(accepted_candidates) == 0:
+            #default to first candidate, first generated token if none are accepted
+            return [candidates[0][candidates[0]!=-1][:1]]
+
+        #list of tensors with ids to append to input
+        return accepted_candidates
+
 
 @torch.no_grad()
 def update_inference_inputs(
