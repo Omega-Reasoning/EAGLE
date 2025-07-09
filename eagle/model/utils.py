@@ -460,8 +460,8 @@ def multi_entropy_evaluate_posterior(
         for i in range(1, candidates.shape[1]):
             gt_logits = logits[:, i][None] # take first token as correct
             gt_logits = logits_processor(None, gt_logits)[0]
-            gtp = torch.softmax(gt_logits, dim=1)
-            gte = torch.special.entr(gtp).sum(dim=1)
+            gtp = torch.softmax(gt_logits, dim=0)
+            gte = torch.special.entr(gtp).sum(dim=0)
             acps = []
             for j in range(candidates.shape[0]):  
                 x = candidates[j, i]
@@ -480,7 +480,7 @@ def multi_entropy_evaluate_posterior(
                 if r <= acp:
                     accept_lengths[j] +=1
             al+=1
-            logging.info(f"Probabilities of token in tree layer {i+1}:{acps}")
+            logging.info(f"Probabilities of token xi in tree layer {i+1}:{[(candidates[c,i].item(),a.item()) for c,a in zip(range(len(candidates)),acps)]}")
         
         accepted_candidates = [candidates[i,:a] for i,a in enumerate(accept_lengths) if a>1]
 
