@@ -1,4 +1,5 @@
 import copy
+import logging
 import random
 
 # typing 
@@ -461,7 +462,7 @@ def multi_entropy_evaluate_posterior(
             gt_logits = logits_processor(None, gt_logits)[0]
             gtp = torch.softmax(gt_logits, dim=1)
             gte = torch.special.entr(gtp).sum(dim=1)
-
+            acps = []
             for j in range(candidates.shape[0]):  
                 x = candidates[j, i]
                 xi = x.item()
@@ -470,24 +471,20 @@ def multi_entropy_evaluate_posterior(
                 
                 r = random.random()
                 acp = gtp[j][xi]
+                acps.append(acp)
                 e = gte[j]
                 if e > entropy_threshold:
                         #token probability needs to be larger then uniform distribution prob. * factor
                         r = ud_probability_factor*((1/logits.shape[2])**(i+1))
-                        print(acp)
 
                 if r <= acp:
                     accept_lengths[j] +=1
             al+=1
+            logging.info(f"Probabilities of token in tree layer {i+1}:{acps}")
         
-        print(accept_lengths)
         accepted_candidates = [candidates[i,:a] for i,a in enumerate(accept_lengths) if a>1]
 
         
-        
-        print(f"-----------------Summary-----------\n{accept_lengths}")
-        print(accepted_candidates)
-        print(r)
         if len(accepted_candidates) == 0:
             #default to first candidate, first generated token if none are accepted
             return [candidates[0][candidates[0]!=-1][:1]]
