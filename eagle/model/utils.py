@@ -6,6 +6,7 @@ import random
 from typing import List, Tuple
 import time
 import torch
+import heapq
 
 # TODO
 # from transformers import LlamaTokenizer
@@ -419,7 +420,7 @@ def multi_entropy_evaluate_posterior(
         logits: torch.Tensor,
         candidates: torch.Tensor,
         logits_processor,
-        entropy_threshold = 1,
+        entropy_threshold = 0.2,
         ud_probability_factor = 100):
     """
     Evaluate the posterior probabilities of the candidates based on the provided logits and choose the best candidate.
@@ -458,30 +459,44 @@ def multi_entropy_evaluate_posterior(
         accept_lengths = torch.ones(candidates.shape[0],dtype=int)
         al = 1
         for i in range(1, candidates.shape[1]):
-            gt_logits = logits[:, i][None] # take first token as correct
+            gt_logits = logits[:, i] [None] # take first token as correct
             gt_logits = logits_processor(None, gt_logits)[0]
             gtp = torch.softmax(gt_logits, dim=0)
-            gte = torch.special.entr(gtp).sum(dim=0)
+            gte = torch.special.entr(gtp).sum(dim=1)
+            gte = normalize_entropies(gte)
             acps = []
+            entropies = []
+            tokens = [] 
             for j in range(candidates.shape[0]):  
                 x = candidates[j, i]
                 xi = x.item()
                 if xi == -1 or accept_lengths[j] < al:
                     continue
-                
+
                 r = random.random()
                 acp = gtp[j][xi]
                 acps.append(acp)
                 e = gte[j]
+                                
+                #all samples at level two share the same token
+                if e == torch.nan:
+                    e = entropy_threshold
+
+                entropies.append(e)
+                tokens.append(xi)
                 if e > entropy_threshold:
                         #token probability needs to be larger then uniform distribution prob. * factor
-                        r = ud_probability_factor*((1/logits.shape[2])**(i+1))
+                        r = 0.8 * torch.mean(torch.tensor([gtp[i,x] for i,x in enumerate(candidates[:,i])]))
 
                 if r <= acp:
                     accept_lengths[j] +=1
             al+=1
-            logging.info(f"Probabilities of token xi in tree layer {i+1}:{[(candidates[c,i].item(),a.item()) for c,a in zip(range(len(candidates)),acps)]}")
+            logging.info(f"Probability, entropy of candidate xi in tree layer {i+1}:{[(tokens[c],a.item(),e.item()) for c,a,e in zip(range(len(tokens)),acps,entropies)]}")
         
+        cand_lengths = torch.where(candidates>0,1,0).sum(dim=1)
+        logging.info(f"candidate lengths: {cand_lengths.tolist()}")
+        logging.info(f"acceptanc lengths: {accept_lengths.tolist()}")
+
         accepted_candidates = [candidates[i,:a] for i,a in enumerate(accept_lengths) if a>1]
 
         
@@ -492,6 +507,8 @@ def multi_entropy_evaluate_posterior(
         #list of tensors with ids to append to input
         return accepted_candidates
 
+def normalize_entropies(gte):
+    return (gte - torch.min(gte)) / (torch.max(gte) - torch.min(gte))
 
 @torch.no_grad()
 def update_inference_inputs(
@@ -550,6 +567,14 @@ def update_inference_inputs(
 
     return input_ids, draft_tokens, retrieve_indices,tree_mask,tree_position_ids, new_token, None, token
 
+
+def n_longest_candidates(tensor_list, n):
+    lengths = torch.tensor([x.shape[0] for x in tensor_list])
+    s,indices = torch.sort(lengths,descending=True)
+    if len(tensor_list) >=n:
+        return [tensor_list[i] for i in indices[:n]]
+    else:
+        return tensor_list
 
 if __name__ == "__main__":
     logits = torch.randn(1, 5)
