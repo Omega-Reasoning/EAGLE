@@ -306,6 +306,7 @@ class EaModel(nn.Module):
             top_p=0.0,
             top_k=0.0,
             max_new_tokens=512,
+            max_new_sequences = None,
             max_length=2048,
             log=False,
             is_llama3=False,
@@ -375,6 +376,9 @@ class EaModel(nn.Module):
             logits, candidates, logits_processor, entropy_threshold=0.1
         )
         input_ids = [torch.cat((input_ids[0],b))for b in best_candidates]
+
+        if max_new_sequences:
+            input_ids = n_longest_candidates(input_ids, max_new_sequences)
 
         return input_ids
 
