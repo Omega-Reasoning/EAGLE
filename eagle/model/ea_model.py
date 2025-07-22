@@ -307,6 +307,7 @@ class EaModel(nn.Module):
             top_k=0.0,
             max_new_tokens=512,
             max_new_sequences = None,
+            entropy_threshold = 0.1,
             max_length=2048,
             log=False,
             is_llama3=False,
@@ -373,7 +374,7 @@ class EaModel(nn.Module):
         candidates = draft_tokens[0, retrieve_indices]
         # verification
         best_candidates = multi_entropy_evaluate_posterior(
-            logits, candidates, logits_processor, entropy_threshold=0.1
+            logits, candidates, logits_processor, entropy_threshold=entropy_threshold
         )
         input_ids = [torch.cat((input_ids[0],b))for b in best_candidates]
 
