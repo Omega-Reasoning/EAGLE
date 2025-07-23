@@ -486,8 +486,8 @@ def multi_entropy_evaluate_posterior(
                 tokens.append(xi)
                 if e > entropy_threshold:
                         #token probability needs to be larger then uniform distribution prob. * factor
-                        r = 0.8 * torch.mean(torch.tensor([gtp[i,x] for i,x in enumerate(candidates[:,i])]))
-
+                        #r = 0.8 * torch.mean(torch.tensor([gtp[i,x] for i,x in enumerate(candidates[:,i])]))
+                        r = ud_probability_factor*(1/logits.shape[2])**2
                 if r <= acp:
                     accept_lengths[j] +=1
             al+=1
